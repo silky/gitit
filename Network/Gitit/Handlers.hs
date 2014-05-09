@@ -141,10 +141,18 @@ createPage = do
                                     , pgTabs = []
                                     , pgTitle = "Create " ++ page ++ "?"
                                     } $
-                    p << [ stringToHtml ("There is no page '" ++ page ++
-                              "'.  You may create the page by "),
-                            anchor ! [href $ base' ++ "/_edit" ++ urlForPage page] <<
-                              "clicking here." ]
+                    (p << stringToHtml
+                        ("There is no page named '" ++ page ++ "'. You can:"))
+                        +++
+                    (unordList $
+                      [ anchor !
+                            [href $ base' ++ "/_edit" ++ urlForPage page] <<
+                              ("Create the page '" ++ page ++ "'")
+                      , anchor !
+                            [href $ base' ++ "/_search?" ++
+                                (urlEncodeVars [("patterns", page)])] <<
+                              ("Search for pages containing the text '" ++
+                                page ++ "'")])
 
 uploadForm :: Handler
 uploadForm = withData $ \(params :: Params) -> do
@@ -153,18 +161,18 @@ uploadForm = withData $ \(params :: Params) -> do
   let logMsg = pLogMsg params
   let upForm = form ! [X.method "post", enctype "multipart/form-data"] <<
        fieldset <<
-       [ p << [label << "File to upload:"
+       [ p << [label ! [thefor "file"] << "File to upload:"
               , br
               , afile "file" ! [value origPath] ]
-       , p << [ label << "Name on wiki, including extension"
+       , p << [ label ! [thefor "wikiname"] << "Name on wiki, including extension"
               , noscript << " (leave blank to use the same filename)"
               , stringToHtml ":"
               , br
               , textfield "wikiname" ! [value wikiname]
               , primHtmlChar "nbsp"
               , checkbox "overwrite" "yes"
-              , label << "Overwrite existing file" ]
-       , p << [ label << "Description of content or changes:"
+              , label ! [thefor "overwrite"] << "Overwrite existing file" ]
+       , p << [ label ! [thefor "logMsg"] << "Description of content or changes:"
               , br
               , textfield "logMsg" ! [size "60", value logMsg]
               , submit "upload" "Upload" ]
@@ -373,10 +381,12 @@ showHistory file page params =  do
 
 showActivity :: Handler
 showActivity = withData $ \(params :: Params) -> do
+  cfg <- getConfig
   currTime <- liftIO getCurrentTime
-  let oneMonthAgo = addUTCTime (-60 * 60 * 24 * 30) currTime
+  let defaultDaysAgo = fromIntegral (recentActivityDays cfg)
+  let daysAgo = addUTCTime (defaultDaysAgo * (-60) * 60 * 24) currTime
   let since = case pSince params of
-                   Nothing -> Just oneMonthAgo
+                   Nothing -> Just daysAgo
                    Just t  -> Just t
   let forUser = pForUser params
   fs <- getFileStore
@@ -388,14 +398,15 @@ showActivity = withData $ \(params :: Params) -> do
   let fileFromChange (Added f)    = f
       fileFromChange (Modified f) = f
       fileFromChange (Deleted f)  = f
-  let dropDotPage file = if isPageFile file
-                            then dropExtension file
-                            else file
+
   base' <- getWikiBase
   let fileAnchor revis file =
         anchor ! [href $ base' ++ "/_diff" ++ urlForPage file ++ "?to=" ++ revis] << file
-  let filesFor changes revis = intersperse (primHtmlChar "nbsp") $
-        map (fileAnchor revis . dropDotPage . fileFromChange) changes
+  let fileAnchor revis file = if isPageFile file
+        then anchor ! [href $ base' ++ "/_diff" ++ urlForPage(dropExtension(file)) ++ "?to=" ++ revis] << dropExtension file
+        else anchor ! [href $ base' ++ urlForPage file ] << file
+  let filesFor changes revis = intersperse (stringToHtml " ") $
+        map (fileAnchor revis . fileFromChange) changes
   let heading = h1 << ("Recent changes by " ++ fromMaybe "all users" forUser)
   let revToListItem rev = li <<
         [ thespan ! [theclass "date"] << (show $ revDateTime rev)
@@ -460,7 +471,8 @@ showDiff file page params = do
                                           pgMessages = pMessages params,
                                           pgTabs = DiffTab :
                                                    pgTabs defaultPageLayout,
-                                          pgSelectedTab = DiffTab
+                                          pgSelectedTab = DiffTab,
+                                          pgTitle = page
                                           }
                                        htmlDiff
 
@@ -519,7 +531,7 @@ editPage' params = do
                    , textarea ! (readonly ++ [cols "80", name "editedText",
                                   identifier "editedText"]) << raw
                    , br
-                   , label << "Description of changes:"
+                   , label ! [thefor "logMsg"] << "Description of changes:"
                    , br
                    , textfield "logMsg" ! (readonly ++ [value logMsg])
                    , submit "update" "Save"

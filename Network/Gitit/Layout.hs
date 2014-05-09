@@ -83,6 +83,8 @@ filledPageTemplate base' cfg layout htmlContents templ =
       scriptLink x = script ! [src (prefixedScript x),
         thetype "text/javascript"] << noHtml
       javascriptlinks = renderHtmlFragment $ concatHtml $ map scriptLink scripts
+      article = if isDiscussPage page then drop 1 page else page
+      discussion = '@':article
       tabli tab = if tab == pgSelectedTab layout
                      then li ! [theclass "selected"]
                      else li
@@ -97,8 +99,14 @@ filledPageTemplate base' cfg layout htmlContents templ =
                    setStrAttr "pagetitle" (pgTitle layout) .
                    T.setAttribute "javascripts" javascriptlinks .
                    setStrAttr "pagename" page .
+                   setStrAttr "articlename" article .
+                   setStrAttr "discussionname" discussion .
                    setStrAttr "pageUrl" (urlForPage page) .
+                   setStrAttr "articleUrl" (urlForPage article) .
+                   setStrAttr "discussionUrl" (urlForPage discussion) .
                    setBoolAttr "ispage" (isPage page) .
+                   setBoolAttr "isarticlepage" (isPage page && not (isDiscussPage page)) .
+                   setBoolAttr "isdiscusspage" (isDiscussPage page) .
                    setBoolAttr "pagetools" (pgShowPageTools layout) .
                    setBoolAttr "sitenav" (pgShowSiteNav layout) .
                    maybe id (T.setAttribute "markuphelp") (pgMarkupHelp layout) .
@@ -106,13 +114,13 @@ filledPageTemplate base' cfg layout htmlContents templ =
                    maybe id (T.setAttribute "revision") rev .
                    T.setAttribute "exportbox"
                        (renderHtmlFragment $  exportBox base' cfg page rev) .
-                   T.setAttribute "tabs" (renderHtmlFragment tabs) .
-                   T.setAttribute "messages" (pgMessages layout) .
+                   (if null (pgTabs layout) then id else T.setAttribute "tabs"
+                       (renderHtmlFragment tabs)) .
+                   (\f x xs -> if null xs then x else f xs) (T.setAttribute "messages") id (pgMessages layout) .
                    T.setAttribute "usecache" (useCache cfg) .
                    T.setAttribute "content" (renderHtmlFragment htmlContents) .
                    setBoolAttr "wikiupload" ( uploadsAllowed cfg) $
                    templ
-
 
 
 exportBox :: String -> Config -> String -> Maybe String -> Html
