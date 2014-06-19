@@ -75,7 +75,6 @@ import Control.Monad.Reader (ask)
 import Data.Foldable (traverse_)
 import Data.List (stripPrefix)
 import Data.Maybe (isNothing, mapMaybe)
-import Network.CGI (formDecode)
 import Network.Gitit.Cache (lookupCache, cacheContents)
 import Network.Gitit.Export (exportFormats)
 import Network.Gitit.Framework hiding (uriPath)
@@ -85,7 +84,7 @@ import Network.Gitit.Server
 import Network.Gitit.State
 import Network.Gitit.Types
 import Network.HTTP (urlDecode)
-import Network.URI (URI (..), isUnescapedInURI, parseURIReference)
+import Network.URI (isUnescapedInURI)
 import Network.URL (encString)
 import Prelude hiding (catch)
 import System.FilePath
@@ -107,6 +106,7 @@ import qualified Data.ByteString.Char8 as SC (unpack)
 import qualified Data.ByteString.Lazy as L (toChunks, fromChunks)
 import qualified Data.FileStore as FS
 import qualified Text.Pandoc as Pandoc
+import Text.URI (parseURI, URI(..), uriQueryItems)
 
 --
 -- ContentTransformer runners
@@ -438,9 +438,8 @@ handleRedirects page = case lookup "redirect" (pageMeta page) of
         base' <- getWikiBase
         request <- askRq
         return $ do
-            referer <- fmap SC.unpack $ getHeader "referer" request
-            uri <- parseURIReference referer
-            let params = formDecode (drop 1 (uriQuery uri))
+            uri <- getHeader "referer" request >>= parseURI . SC.unpack
+            let params = uriQueryItems uri
             redirect' <- lookup "redirect" params
             guard $ redirect' == "yes"
             path' <- stripPrefix (base' ++ "/") (uriPath uri)
@@ -519,6 +518,7 @@ pandocToHtml pandocContents = do
                                  _      -> JsMath (Just $ base' ++
                                                       "/js/jsMath/easy/load.js")
                       , writerTableOfContents = toc
+                      , writerHighlight = True
                       , writerExtensions = if bird
                                               then Set.insert
                                                    Ext_literate_haskell
@@ -677,6 +677,8 @@ readerFor pt lhs =
        LaTeX    -> readLaTeX defPS
        HTML     -> readHtml defPS
        Textile  -> readTextile defPS
+       Org      -> readOrg defPS
+       DocBook  -> readDocBook defPS
 
 wikiLinksTransform :: Pandoc -> PluginM Pandoc
 wikiLinksTransform pandoc

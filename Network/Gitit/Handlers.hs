@@ -69,7 +69,8 @@ import Prelude hiding (catch)
 import Network.Gitit.State
 import Text.XHtml hiding ( (</>), dir, method, password, rev )
 import qualified Text.XHtml as X ( method )
-import Data.List (intersperse, nub, sortBy, find, isPrefixOf, inits, sort)
+import Data.List (intercalate, intersperse, delete, nub, sortBy, find, isPrefixOf, inits, sort, (\\))
+import Data.List.Split (wordsBy)
 import Data.Maybe (fromMaybe, mapMaybe, isJust, catMaybes)
 import Data.Ord (comparing)
 import Data.Char (toLower, isSpace)
@@ -83,13 +84,14 @@ import Data.FileStore
 import System.Log.Logger (logM, Priority(..))
 
 handleAny :: Handler
-handleAny = uriRest $ \uri ->
+handleAny = withData $ \(params :: Params) -> uriRest $ \uri ->
   let path' = uriPath uri
   in  do fs <- getFileStore
+         let rev = pRevision params
          mimetype <- getMimeTypeForExtension
                       (takeExtension path')
          res <- liftIO $ try
-                (retrieve fs path' Nothing :: IO B.ByteString)
+                (retrieve fs path' rev :: IO B.ByteString)
          case res of
                 Right contents -> ignoreFilters >>  -- don't compress
                                   (ok $ setContentType mimetype $
@@ -250,6 +252,7 @@ goToPage = withData $ \(params :: Params) -> do
   let findPage f = find f allPageNames
   let exactMatch f = gotopage == f
   let insensitiveMatch f = (map toLower gotopage) == (map toLower f)
+  let prefixMatch f = (map toLower gotopage) `isPrefixOf` (map toLower f)
   base' <- getWikiBase
   case findPage exactMatch of
        Just m  -> seeOther (base' ++ urlForPage m) $ toResponse
@@ -257,8 +260,11 @@ goToPage = withData $ \(params :: Params) -> do
        Nothing -> case findPage insensitiveMatch of
                        Just m  -> seeOther (base' ++ urlForPage m) $ toResponse
                                     "Redirecting to case-insensitive match"
-                       Nothing -> seeOther (base' ++ urlForPage gotopage) $ toResponse
-                                    "Redirecting to new page"
+                       Nothing -> case findPage prefixMatch of
+                                       Just m  -> seeOther (base' ++ urlForPage m) $
+                                                  toResponse $ "Redirecting" ++
+                                                    " to partial match"
+                                       Nothing -> searchResults
 
 searchResults :: Handler
 searchResults = withData $ \(params :: Params) -> do
@@ -400,11 +406,9 @@ showActivity = withData $ \(params :: Params) -> do
       fileFromChange (Deleted f)  = f
 
   base' <- getWikiBase
-  let fileAnchor revis file =
-        anchor ! [href $ base' ++ "/_diff" ++ urlForPage file ++ "?to=" ++ revis] << file
   let fileAnchor revis file = if isPageFile file
-        then anchor ! [href $ base' ++ "/_diff" ++ urlForPage(dropExtension(file)) ++ "?to=" ++ revis] << dropExtension file
-        else anchor ! [href $ base' ++ urlForPage file ] << file
+        then anchor ! [href $ base' ++ "/_diff" ++ urlForPage (dropExtension file) ++ "?to=" ++ revis] << dropExtension file
+        else anchor ! [href $ base' ++ urlForPage file ++ "?revision=" ++ revis] << file
   let filesFor changes revis = intersperse (stringToHtml " ") $
         map (fileAnchor revis . fileFromChange) changes
   let heading = h1 << ("Recent changes by " ++ fromMaybe "all users" forUser)
@@ -607,7 +611,7 @@ deletePage = withData $ \(params :: Params) -> do
   if pConfirm params && (file == page || file == page <.> "page")
      then do
        fs <- getFileStore
-       liftIO $ delete fs file author descrip
+       liftIO $ Data.FileStore.delete fs file author descrip
        seeOther (base' ++ "/") $ toResponse $ p << "File deleted"
      else seeOther (base' ++ urlForPage page) $ toResponse $ p << "Not deleted"
 
@@ -704,30 +708,44 @@ fileListToHtml base' prefix files =
 -- more sophisticated searching options to filestore.
 categoryPage :: Handler
 categoryPage = do
-  category <- getPath
+  path' <- getPath
   cfg <- getConfig
+  let pcategories = wordsBy (==',') path'
   let repoPath = repositoryPath cfg
-  let categoryDescription = "Category: " ++ category
+  let categoryDescription = "Category: " ++ (intercalate " + " pcategories)
   fs <- getFileStore
   files <- liftIO $ index fs
   let pages = filter (\f -> isPageFile f && not (isDiscussPageFile f)) files
   matches <- liftM catMaybes $
              forM pages $ \f -> do
                categories <- liftIO $ readCategories $ repoPath </> f
-               return $ if category `elem` categories
-                           then Just f
+               return $ if all ( `elem` categories) pcategories
+                           then Just (f, categories \\ pcategories)
                            else Nothing
   base' <- getWikiBase
   let toMatchListItem file = li <<
         [ anchor ! [href $ base' ++ urlForPage (dropExtension file)] << dropExtension file ]
-  let htmlMatches = ulist << map toMatchListItem matches
+  let toRemoveListItem cat = li << 
+        [ anchor ! [href $ base' ++
+        (if null (tail pcategories)
+         then "/_categories"
+         else "/_category" ++ urlForPage (intercalate "," $ Data.List.delete cat pcategories)) ]
+        << ("-" ++ cat) ]
+  let toAddListItem cat = li <<
+        [ anchor ! [href $ base' ++
+          "/_category" ++ urlForPage (path' ++ "," ++ cat) ]
+        << ("+" ++ cat) ]
+  let matchList = ulist << map toMatchListItem (fst $ unzip matches) +++
+                  thediv ! [ identifier "categoryList" ] <<
+                  ulist << (++) (map toAddListItem (nub $ concat $ snd $ unzip matches)) 
+                                (map toRemoveListItem pcategories) 
   formattedPage defaultPageLayout{
                   pgPageName = categoryDescription,
                   pgShowPageTools = False,
                   pgTabs = [],
                   pgScripts = ["search.js"],
                   pgTitle = categoryDescription }
-                htmlMatches
+                matchList
 
 categoryListPage :: Handler
 categoryListPage = do

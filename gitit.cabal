@@ -1,5 +1,5 @@
 name:                gitit
-version:             0.10.3.1
+version:             0.10.4
 Cabal-version:       >= 1.6
 build-type:          Simple
 synopsis:            Wiki using happstack, git or darcs, and pandoc.
@@ -117,8 +117,8 @@ Library
     exposed-modules: Network.Gitit.Interface
     build-depends:   ghc, ghc-paths
     cpp-options:     -D_PLUGINS
-  build-depends:     base >= 3, pandoc >= 1.12 && < 1.13,
-                     pandoc-types >= 1.12 && < 1.13, filepath, safe
+  build-depends:     base >= 3, pandoc >= 1.12.4 && < 1.13,
+                     pandoc-types >= 1.12.3 && < 1.13, filepath, safe
   extensions:        CPP
   if impl(ghc >= 6.12)
     ghc-options:     -Wall -fno-warn-unused-do-bind
@@ -134,19 +134,18 @@ Executable           gitit
                      pretty,
                      xhtml,
                      containers,
-                     pandoc >= 1.12 && < 1.13,
-                     pandoc-types >= 1.12 && < 1.13,
+                     pandoc >= 1.12.4 && < 1.13,
+                     pandoc-types >= 1.12.3 && < 1.13,
                      process,
                      filepath,
                      directory,
                      mtl,
-                     cgi,
                      old-time,
                      highlighting-kate >= 0.5.0.1 && < 0.6,
                      bytestring,
                      text,
                      random,
-                     network >= 2.1.0.0 && < 2.5,
+                     network >= 2.3 && < 2.6,
                      utf8-string >= 0.3 && < 0.4,
                      SHA > 1 && < 1.7,
                      HTTP >= 4000.0 && < 4000.3,
@@ -166,13 +165,11 @@ Executable           gitit
                      xss-sanitize >= 0.3 && < 0.4,
                      tagsoup >= 0.13 && < 0.14,
                      blaze-html >= 0.4 && < 0.8,
-                     json >= 0.4 && < 0.8
+                     json >= 0.4 && < 0.8,
+                     uri >= 0.1 && < 0.2,
+                     split
   if impl(ghc >= 6.10)
     build-depends:   base >= 4, syb
-  if impl(ghc >= 7.0.3)
-    -- without this, 'cabal install' tries to install an older
-    -- version of network; I'm not sure why:
-    build-depends:   network >= 2.3 && < 2.5
   if flag(plugins)
     build-depends:   ghc, ghc-paths
     cpp-options:     -D_PLUGINS
